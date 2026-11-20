@@ -22,6 +22,12 @@
       },
       "ai_learning": {
         "default": "mdi:school"
+      },
+      "delete_targets": {
+        "default": "mdi:account-remove"
+      },
+      "zone_delete_targets": {
+        "default": "mdi:account-remove-outline"
       }
     },
     "sensor": {

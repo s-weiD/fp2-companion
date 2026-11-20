@@ -60,6 +60,10 @@ asks for an issue with the model.
   zone's attribute between detection, entrance and edge.
 - **Backups:** the zones are backed up whenever they change and before every
   write. Any backup can be previewed on the map and restored.
+- **Delete targets:** a button for the room and one for every detection
+  zone drop the people the FP2 tracks there, which clears a zone that a
+  ghost keeps occupied. A person who is really there is found again when
+  they move.
 - **Live view:** the people and interference sources the FP2 is tracking,
   drawn as dots on the zone map, while the card is on screen.
 - **Sign-in in Home Assistant:** the account, the password and the country
@@ -74,6 +78,8 @@ asks for an issue with the model.
   in one step if the new one detects worse.
 - Watch the live dots while you walk the room, to see where the FP2 places
   you and where its zones should end.
+- Clear a ghost that keeps the kitchen lights on, from a dashboard button
+  or from an automation, without opening the Aqara app.
 - Switch AI person detection from an automation, for example off while
   nobody is home.
 
@@ -146,6 +152,8 @@ integration creates these entities on a device named after the FP2 with
 | `select.presence_sensor_fp2_b2c3_<zone>_sensitivity` | One per detection zone, named after the zone. |
 | `switch.presence_sensor_fp2_b2c3_ai_detection` | AI person detection. While it is on, the FP2 sets its own sensitivity. |
 | `button.presence_sensor_fp2_b2c3_ai_learning` | Starts the one-minute AI learning run of the Aqara app. |
+| `button.presence_sensor_fp2_b2c3_delete_targets` | Drops every person the FP2 tracks in the room. |
+| `button.presence_sensor_fp2_b2c3_<zone>_delete_targets` | One per detection zone: drops every person the FP2 tracks in that zone. |
 | `button.presence_sensor_fp2_b2c3_refresh` | Reads the settings and the zones again. |
 | `sensor.presence_sensor_fp2_b2c3_zones` | The number of zones; its attributes carry the zones and the newest backups for the card. |
 | `sensor.presence_sensor_fp2_b2c3_cloud_status` | What the last cloud call came to, as a code: `ok`, `no_session`, `cloud_error`, `refused` and others. |

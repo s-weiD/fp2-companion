@@ -548,6 +548,31 @@ def test_the_view_heartbeat_is_the_device_pages_own_write(store):
     assert t.body() == {"subjectId": DID, "data": {"4.22.85": 1}}
 
 
+def test_a_target_is_deleted_by_its_id_as_a_string(store):
+    # 14.56.85 is the firmware's delete_false_target; like every other write
+    # the value must be a JSON string to reach the device.
+    t = FakeTransport().reply(result="")
+    client(store, t).delete_target(7)
+    assert urlsplit(t.requests[0]["url"]).path.endswith("/res/write")
+    assert t.body() == {"subjectId": DID, "data": {"14.56.85": "7"}}
+
+
+@pytest.mark.parametrize("bad", [-1, 256, "7", None, True, 1.0])
+def test_a_delete_of_something_that_is_no_target_id_sends_nothing(store, bad):
+    t = FakeTransport()
+    with pytest.raises(AqaraRefused):
+        client(store, t).delete_target(bad)
+    assert t.requests == []
+
+
+def test_the_targets_are_one_read_of_the_positions(store):
+    t = FakeTransport().reply(result=[
+        {"resourceId": "4.22.700", "value": "[]", "subjectId": DID}])
+    assert client(store, t).query_targets() == "[]"
+    assert t.body() == {"data": [{"options": ["4.22.700"],
+                                  "subjectId": DID}]}
+
+
 # ----------------------------------------------------------------- app identity
 def test_the_regions_own_pair_is_tried_before_a_configured_one(store,
                                                                 monkeypatch):

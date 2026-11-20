@@ -99,6 +99,25 @@ class FakeCloud:
         if self.lands:
             self.values[rid] = value
 
+    def view_heartbeat(self):
+        if self.fail:
+            raise self.fail
+        self.heartbeats = getattr(self, "heartbeats", 0) + 1
+
+    def query_targets(self):
+        if self.fail:
+            raise self.fail
+        return json.dumps(getattr(self, "targets", []))
+
+    def delete_target(self, target_id):
+        if self.fail:
+            raise self.fail
+        if isinstance(target_id, bool) or not isinstance(target_id, int) \
+                or not 0 <= target_id <= 255:
+            raise AqaraRefused(f"not a target id: {target_id!r}")
+        self.target_deletes = getattr(self, "target_deletes", [])
+        self.target_deletes.append(target_id)
+
     def set_zone(self, zone):
         """Like the server in the 2026-10-30 capture: a zone without a
         rangeId is created under the next free id and an empty tag becomes
@@ -239,6 +258,8 @@ def cmd(app, key, payload="", device=KEY):
         "zone_set": lambda: d.zone_set(_json(payload)),
         "zone_delete": lambda: d.zone_delete(payload),
         "restore": lambda: d.restore(payload),
+        "target_delete": lambda: d.target_delete(payload),
+        "targets_delete": lambda: d.targets_delete(payload or None),
     }
     calls[key]()
 
@@ -993,6 +1014,105 @@ def test_ai_learning_sends_what_the_aqara_app_sends_and_counts_down(fp2):
     assert timer["delay"] == 60
     timer["callback"](timer["kwargs"])
     assert attrs(world)["learning_until"] is None
+
+
+# ------------------------------------------------------------------ targets
+def slot(target_id, range_id, kind=0, state="1"):
+    return {"id": target_id, "x": 100, "y": 200, "rangeId": range_id,
+            "targetType": kind, "state": state}
+
+
+# A person on the couch (zone 3), a ghost at the countertop (zone 1), a robot
+# vacuum the FP2 marked as interference there too, and an empty slot.
+TARGETS = [slot(0, 3), slot(4, 1), slot(5, 1, kind=1), slot(9, 1, state="0")]
+
+
+def fire_last_timer(world):
+    timer = world.timers[-1]
+    timer["callback"](timer["kwargs"])
+    return timer
+
+
+def test_one_target_is_deleted_by_the_id_the_live_view_shows(fp2):
+    app, world = fp2()
+    app.start()
+    cmd(app, "target_delete", 4)
+    assert app.cloud_fake.target_deletes == [4]
+    assert attrs(world)["last_target_delete"]["targets"] == [4]
+    assert status(world) == "ok"
+
+
+def test_a_delete_by_zone_writes_the_heartbeat_then_reads_who_is_there(fp2):
+    app, world = fp2()
+    app.start()
+    app.cloud_fake.targets = TARGETS
+    cmd(app, "targets_delete", 1)
+    # Nothing is deleted before the FP2 had time to answer the heartbeat.
+    assert app.cloud_fake.heartbeats == 1
+    assert not hasattr(app.cloud_fake, "target_deletes")
+    assert fire_last_timer(world)["delay"] == 3
+    # Only the person in that zone: not the couch, not the interference
+    # source, not the empty slot.
+    assert app.cloud_fake.target_deletes == [4]
+    done = attrs(world)["last_target_delete"]
+    assert (done["zone"], done["targets"]) == (1, [4])
+    assert done["at"] == attrs(world)["last_read"]
+
+
+def test_a_zone_is_also_named_by_its_name_whatever_its_case(fp2):
+    app, world = fp2()
+    app.start()
+    app.cloud_fake.targets = TARGETS
+    cmd(app, "targets_delete", "kitchen countertop")
+    fire_last_timer(world)
+    assert app.cloud_fake.target_deletes == [4]
+
+
+def test_without_a_zone_every_person_in_the_room_is_deleted(fp2):
+    app, world = fp2()
+    app.start()
+    app.cloud_fake.targets = TARGETS
+    cmd(app, "targets_delete")
+    fire_last_timer(world)
+    assert app.cloud_fake.target_deletes == [0, 4]
+    assert attrs(world)["last_target_delete"]["zone"] is None
+
+
+def test_an_empty_zone_deletes_nothing_and_says_so(fp2):
+    app, world = fp2()
+    app.start()
+    app.cloud_fake.targets = [slot(0, 3)]
+    cmd(app, "targets_delete", 1)
+    fire_last_timer(world)
+    assert not hasattr(app.cloud_fake, "target_deletes")
+    assert attrs(world)["last_target_delete"]["targets"] == []
+    assert any("no target to delete" in line for line in world.logs)
+
+
+def test_a_zone_the_device_does_not_have_is_refused(fp2):
+    app, world = fp2()
+    app.start()
+    cmd(app, "targets_delete", "Bathroom")
+    assert not hasattr(app.cloud_fake, "heartbeats")
+    assert status(world) == "refused"
+
+
+@pytest.mark.parametrize("bad", [-1, 256, "x", None, True])
+def test_a_target_id_that_is_none_is_refused(fp2, bad):
+    app, world = fp2()
+    app.start()
+    cmd(app, "target_delete", bad)
+    assert not hasattr(app.cloud_fake, "target_deletes")
+    assert status(world) == "refused"
+
+
+def test_a_cloud_error_on_a_target_delete_shows_as_one(fp2):
+    app, world = fp2()
+    app.start()
+    app.cloud_fake.fail = AqaraError("res/write", 500, "boom")
+    cmd(app, "target_delete", 4)
+    assert status(world) == "cloud_error"
+    assert attrs(world)["last_target_delete"] is None
 
 
 # ---------------------------------------------------------- several devices

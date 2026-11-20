@@ -23,6 +23,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 
+from .aqara_cloud import TARGET_ID_MAX
 from .const import DOMAIN
 from .zone_model import read_backup
 
@@ -62,6 +63,7 @@ def async_setup(hass: HomeAssistant) -> None:
         ws_zone_delete,
         ws_backup_preview,
         ws_backup_restore,
+        ws_target_delete,
         ws_live_subscribe,
     ):
         websocket_api.async_register_command(hass, command)
@@ -181,6 +183,25 @@ def ws_backup_restore(
     if found := _device(hass, connection, msg):
         app, device = found
         app.submit(device.restore, msg["name"])
+        connection.send_result(msg["id"])
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "fp2_companion/target/delete",
+        vol.Required("device"): DEVICE,
+        vol.Required("target_id"): vol.All(int, vol.Range(min=0, max=TARGET_ID_MAX)),
+    }
+)
+@callback
+def ws_target_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Drop one target the live view shows, by its id."""
+    if found := _device(hass, connection, msg):
+        app, device = found
+        app.submit(device.target_delete, msg["target_id"])
         connection.send_result(msg["id"])
 
 

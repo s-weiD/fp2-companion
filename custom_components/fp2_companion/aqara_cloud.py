@@ -71,6 +71,14 @@ RID_AI_LEARNING = "4.66.85"
 # socket about every 0.75 s, but only to a socket subscribed to the device's
 # "control" view (docs/PROTOCOL.md).
 RID_POSITIONS = "4.22.700"
+# Deletes one target the FP2 tracks: the Aqara app's "Delete target" on a long
+# press of a figure on the map. The value is the target's `id` from
+# RID_POSITIONS. Read out of the stock firmware 1.3.6_0003 on 2026-11-20,
+# where every resource id sits right before the name of its handler and this
+# one sits before `delete_false_target`; the radar takes it as a UINT8
+# (docs/PROTOCOL.md).
+RID_DELETE_TARGET = "14.56.85"
+TARGET_ID_MAX = 255
 
 # The push socket and the view it subscribes to. The view id and version are
 # what the app's own cache holds for lumi.motion.agl001.
@@ -441,6 +449,21 @@ class AqaraCloud:
         if text not in allowed:
             raise AqaraRefused(f"{text!r} is not a value of {rid}")
         body = json.dumps({"subjectId": self.did, "data": {rid: text}})
+        self._call("POST", "res/write", body)
+
+    def query_targets(self):
+        """One snapshot of RID_POSITIONS, as the cloud holds it. It is only
+        current while something writes the view heartbeat, so the caller
+        writes one first and waits for the FP2 to answer it."""
+        return self.query_rids([RID_POSITIONS]).get(RID_POSITIONS)
+
+    def delete_target(self, target_id):
+        """Make the FP2 drop one target, by its `id` in RID_POSITIONS."""
+        if (isinstance(target_id, bool) or not isinstance(target_id, int)
+                or not 0 <= target_id <= TARGET_ID_MAX):
+            raise AqaraRefused(f"not a target id: {target_id!r}")
+        body = json.dumps({"subjectId": self.did,
+                           "data": {RID_DELETE_TARGET: str(target_id)}})
         self._call("POST", "res/write", body)
 
     def list_zones(self):

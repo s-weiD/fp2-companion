@@ -104,11 +104,22 @@ the number 1.
 | `4.66.85` | Starts AI learning | 1 |
 | `4.22.85` | Device page heartbeat | 1 (a number) |
 | `4.21N.85` | Written after a detection zone write, see Zones | 1 (a number) |
+| `14.56.85` | Deletes one target | The target's `id` in the live targets |
 | `4.22.700` | Live targets | JSON, see below |
 
 While AI person detection is on, the device reports sensitivity as 3 and
 ignores writes to it. AI learning runs for about 60 seconds and reports no
 progress in any resource, so the card counts down on its own.
+
+`14.56.85` is the Aqara app's "Delete target", which it offers on a long
+press of a figure on the map. It was not captured from the app. It was read
+out of the stock firmware 1.3.6_0003 on 2026-11-20: in the ESP32 image every
+resource id sits right before the name of its handler, `14.47.85` before
+`closing_setting`, `4.72.85` before `target_type_enable`, and `14.56.85`
+before `delete_false_target`, which hands a UINT8 to the radar (its SubID
+0x0160). The value is the `id` of a slot in the live targets. The whole
+room's targets are dropped by `4.66.85`, the firmware's
+`reset_absent_status`.
 
 ## Zones
 

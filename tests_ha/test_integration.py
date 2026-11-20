@@ -1303,3 +1303,61 @@ async def test_an_excluded_fp2_paired_later_starts_no_rescan(
     await hass.async_block_till_done()
     assert entry.runtime_data._rescan is None
     assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+# ------------------------------------------------------- deleting targets
+async def test_the_delete_buttons_name_the_room_or_their_zone(hass, entry) -> None:
+    await show_zones(hass, entry, zones((3, "Couch"), (1, "Kitchen Countertop")))
+    device = entry.runtime_data.devices[KEY]
+    calls = []
+    device.targets_delete = lambda zone=None: calls.append(zone)
+    couch = hass.states.get(f"button.{PREFIX}_couch_delete_targets")
+    assert couch.name == \
+        "Presence-Sensor-FP2-B2C3 Settings Delete targets in Couch"
+    for entity_id in (f"button.{PREFIX}_delete_targets",
+                      f"button.{PREFIX}_couch_delete_targets",
+                      f"button.{PREFIX}_kitchen_countertop_delete_targets"):
+        await hass.services.async_call("button", "press",
+                                       {"entity_id": entity_id}, blocking=True)
+    await wait_for_worker(hass, entry)
+    assert calls == [None, 3, 1]
+
+
+async def test_a_zone_loses_its_delete_button_with_the_zone(hass, entry) -> None:
+    await show_zones(hass, entry, zones((3, "Couch"), (1, "Kitchen Countertop")))
+    await show_zones(hass, entry, zones((3, "Couch")))
+    registry = er.async_get(hass)
+    assert registry.async_get(
+        f"button.{PREFIX}_kitchen_countertop_delete_targets") is None
+    assert registry.async_get(f"button.{PREFIX}_couch_delete_targets")
+    # The zone's select and the room's own button are not the buttons' to
+    # remove.
+    assert registry.async_get(f"select.{PREFIX}_couch_sensitivity")
+    assert registry.async_get(f"button.{PREFIX}_delete_targets")
+
+
+async def test_the_card_deletes_one_target_by_its_id(
+        hass, entry, hass_ws_client) -> None:
+    device = entry.runtime_data.devices[KEY]
+    calls = []
+    device.target_delete = lambda target_id: calls.append(target_id)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({
+        "type": "fp2_companion/target/delete", "device": KEY, "target_id": 4})
+    assert (await client.receive_json())["success"]
+    await wait_for_worker(hass, entry)
+    assert calls == [4]
+    for bad in (-1, 256, "4"):
+        await client.send_json_auto_id({
+            "type": "fp2_companion/target/delete", "device": KEY,
+            "target_id": bad})
+        assert (await client.receive_json())["error"]["code"] == "invalid_format"
+    assert calls == [4]
+
+
+async def test_deleting_a_target_needs_an_admin(
+        hass, entry, hass_ws_client, hass_read_only_access_token) -> None:
+    client = await hass_ws_client(hass, hass_read_only_access_token)
+    await client.send_json_auto_id({
+        "type": "fp2_companion/target/delete", "device": KEY, "target_id": 4})
+    assert (await client.receive_json())["error"]["code"] == "unauthorized"

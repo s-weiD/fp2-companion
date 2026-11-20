@@ -118,6 +118,12 @@
       },
       "ai_learning": {
         "name": "AI learning"
+      },
+      "delete_targets": {
+        "name": "Delete targets"
+      },
+      "zone_delete_targets": {
+        "name": "Delete targets in {zone}"
       }
     },
     "sensor": {

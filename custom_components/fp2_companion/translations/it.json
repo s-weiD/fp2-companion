@@ -118,6 +118,12 @@
       },
       "ai_learning": {
         "name": "Apprendimento AI"
+      },
+      "delete_targets": {
+        "name": "Elimina bersagli"
+      },
+      "zone_delete_targets": {
+        "name": "Elimina bersagli in {zone}"
       }
     },
     "sensor": {

@@ -38,7 +38,7 @@ from .aqara_cloud import (RID_AI_LEARNING, RID_AI_MODE, RID_APPROACH_DISTANCE,
                          RID_SENSITIVITY, AqaraAuthError, AqaraCloud,
                          AqaraError, AqaraRefused, SessionStore,
                          did_from_serial, jwt_exp)
-from .live_track import LiveTracker, to_grid
+from .live_track import TARGET_PERSON, LiveTracker, live_targets, to_grid
 from .zone_model import (COLUMNS, ERR_BAD_REGION, ERR_EDGE_LOCKED,
                         ERR_ENTRANCE_LOCKED, ERR_NO_BLOCKS, ERR_RANGE_ID,
                         LOCKED_REGIONS, REGION_DETECTION, REGION_EDGE,
@@ -103,6 +103,9 @@ REFUSED_AI_MODE_ON = "ai_mode_on"
 # How long an AI learning run lasts in the Aqara app. Nothing on the cloud
 # reports progress, so the end is this many seconds after the start.
 AI_LEARNING_SECONDS = 60
+# How long the FP2 gets to answer a view heartbeat before its targets are
+# read. Without a heartbeat the cloud holds an old snapshot or none.
+TARGET_SETTLE_SECONDS = 3
 
 STATUS_TEXT = {
     STATUS_STARTING: "Starting.",
@@ -202,6 +205,8 @@ class Fp2Device:
         self.last_read = None
         self.last_error = None
         self.learning_until = None
+        # What the last delete of targets did, for the card and automations.
+        self.last_target_delete = None
         self.status = STATUS_STARTING
         self.status_detail = None
         # Whether the cloud answered the last call. Kept apart from the
@@ -241,6 +246,15 @@ class Fp2Device:
 
     def restore(self, name):
         self._restore(name)
+
+    def target_delete(self, target_id):
+        """Drop one target, by the id the live view shows for it."""
+        self._targets_delete([target_id], None)
+
+    def targets_delete(self, zone=None):
+        """Drop every person the FP2 tracks in one zone, named by its
+        rangeId or its name, or in the whole room without one."""
+        self._targets_find(zone)
 
     def track(self, client, on):
         """A card's lease on the live positions. Each browser tab is its own
@@ -389,6 +403,87 @@ class Fp2Device:
             return
         self.learning_until = None
         self._changed()
+
+    # ----------------------------------------------------------- targets
+    #
+    # The FP2 sometimes keeps a person on the map who has left, and the
+    # zone stays occupied. The Aqara app deletes such a target on a long
+    # press. A target is named by its id in the live positions, which only
+    # flow while the view heartbeat is written, so a delete by zone writes
+    # one, waits and then reads who is there.
+
+    def _targets_find(self, zone):
+        range_id = None
+        if zone is not None and zone != "":
+            range_id = self._range_id_of(zone)
+            if range_id is None:
+                self._refuse(f"no zone {zone!r} to delete targets in")
+                return
+        with self.app.lock:
+            try:
+                self.cloud.view_heartbeat()
+            except AqaraError as exc:
+                self._cloud_failed(exc)
+                return
+        self.app.run_in(self._targets_delete_found, TARGET_SETTLE_SECONDS,
+                        range_id=range_id)
+
+    def _targets_delete_found(self, kwargs=None):
+        range_id = (kwargs or {}).get("range_id")
+        with self.app.lock:
+            try:
+                value = self.cloud.query_targets()
+            except AqaraError as exc:
+                self._cloud_failed(exc)
+                return
+        ids = [t["id"] for t in live_targets(value)
+               if t["type"] == TARGET_PERSON
+               and (range_id is None or t["zone"] == range_id)]
+        self._targets_delete(ids, range_id)
+
+    def _targets_delete(self, ids, range_id):
+        wanted = []
+        for target_id in ids:
+            if isinstance(target_id, str) and target_id.isdigit():
+                target_id = int(target_id)
+            if isinstance(target_id, bool) or not isinstance(target_id, int):
+                self._refuse(f"not a target id: {target_id!r}")
+                return
+            if target_id not in wanted:
+                wanted.append(target_id)
+        deleted = []
+        with self.app.lock:
+            try:
+                for target_id in wanted:
+                    self.cloud.delete_target(target_id)
+                    deleted.append(target_id)
+            except AqaraRefused as exc:
+                self._refuse(str(exc))
+                return
+            except AqaraError as exc:
+                self._cloud_failed(exc)
+                return
+        where = "the room" if range_id is None else f"zone {range_id}"
+        self.app.log(f"{self.info['name']}: deleted targets {deleted} in "
+                     f"{where}" if deleted else
+                     f"{self.info['name']}: no target to delete in {where}")
+        self.last_target_delete = {"at": _iso(self.app._now()),
+                                   "zone": range_id, "targets": deleted}
+        self._changed()
+
+    def _range_id_of(self, zone):
+        """A zone's rangeId from the rangeId itself or from the zone's name,
+        whatever its case. None when the device has no such zone."""
+        if _is_range_id(zone):
+            wanted = int(zone)
+            return next((z.get("rangeId") for z in self.zones
+                         if z.get("rangeId") == wanted), None)
+        if not isinstance(zone, str):
+            return None
+        name = zone.strip().casefold()
+        return next((z.get("rangeId") for z in self.zones
+                     if str(z.get("name") or "").strip().casefold() == name
+                     and z.get("rangeId") is not None), None)
 
     # ------------------------------------------------------------- zones
     #
@@ -737,6 +832,7 @@ class Fp2Device:
             "last_read": _iso(self.last_read),
             "last_error": self.last_error,
             "learning_until": _iso(self.learning_until),
+            "last_target_delete": self.last_target_delete,
         }
 
     def zones_attributes(self):
