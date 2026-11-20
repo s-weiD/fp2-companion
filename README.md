@@ -35,9 +35,9 @@ the cloud.
 - The [FP2 Companion Card](https://github.com/sfortis/fp2-companion-card),
   version 2.0.0 or later, installed from HACS. The card is the zone editor
   and the live view.
-- An **admin** Home Assistant user for the zone editor, backup restores and
-  the live view. Any user can read the card and change the settings that are
-  entities.
+- An **admin** Home Assistant user for the zone editor and backup restores.
+  Any user can read the card, change the settings that are entities, watch
+  the live view and delete targets.
 
 ## Supported Devices
 
@@ -285,8 +285,8 @@ are left out of it.
 - The session lives in `.storage/fp2_companion/session.json` in Home
   Assistant's configuration folder, with mode 0600 in a folder with mode
   0700. Nothing in the integration logs a token, a user id or the app key.
-- The card's commands and the live view require an admin Home Assistant
-  user.
+- The card's zone and backup commands require an admin Home Assistant
+  user. The live view and the delete of a target are open to every user.
 - The integration writes only a fixed list of settings and values, and
   refuses anything else before it reaches the network.
 - Zone backups are in `.storage/fp2_companion/backups/<device id>/`.

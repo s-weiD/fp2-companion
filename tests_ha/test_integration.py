@@ -587,8 +587,7 @@ async def test_a_user_who_is_not_an_admin_is_refused(
     client = await hass_ws_client(hass, hass_read_only_access_token)
     for message in (
             {"type": "fp2_companion/backup/restore", "device": KEY, "name": "x"},
-            {"type": "fp2_companion/zone/delete", "device": KEY, "range_id": 1},
-            {"type": "fp2_companion/live/subscribe", "device": KEY}):
+            {"type": "fp2_companion/zone/delete", "device": KEY, "range_id": 1}):
         await client.send_json_auto_id(message)
         reply = await client.receive_json()
         assert reply["error"]["code"] == "unauthorized", message
@@ -1355,9 +1354,20 @@ async def test_the_card_deletes_one_target_by_its_id(
     assert calls == [4]
 
 
-async def test_deleting_a_target_needs_an_admin(
+async def test_the_live_view_and_a_target_delete_need_no_admin(
         hass, entry, hass_ws_client, hass_read_only_access_token) -> None:
+    # A household's dashboard is not used by its admins alone: everyone may
+    # watch the targets and delete one, as everyone may press the buttons.
+    device = entry.runtime_data.devices[KEY]
+    calls = []
+    device.target_delete = lambda target_id: calls.append(("delete", target_id))
+    device.track = lambda client, on: calls.append(("track", on))
     client = await hass_ws_client(hass, hass_read_only_access_token)
     await client.send_json_auto_id({
         "type": "fp2_companion/target/delete", "device": KEY, "target_id": 4})
-    assert (await client.receive_json())["error"]["code"] == "unauthorized"
+    assert (await client.receive_json())["success"]
+    await client.send_json_auto_id({
+        "type": "fp2_companion/live/subscribe", "device": KEY})
+    assert (await client.receive_json())["success"]
+    await wait_for_worker(hass, entry)
+    assert calls == [("delete", 4), ("track", True)]

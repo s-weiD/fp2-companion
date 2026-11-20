@@ -2,9 +2,12 @@
 
 Up to version 1.4.x the card sent its commands with the `mqtt.publish` action,
 which every Home Assistant user may call, and read the live positions with
-an MQTT subscription. Every command here requires an admin user: a zone
-write or a restore changes the FP2. The sign-in is the config flow's
-(decision 28).
+an MQTT subscription. The zone and backup commands require an admin user: a
+zone write or a restore changes the FP2's configuration. The live view and
+the delete of one target are open to every Home Assistant user, as the delete
+buttons of the room and the zones are: they change nothing that lasts, and a
+household's dashboard is not used by its admins alone. The sign-in is the
+config flow's (decision 28).
 
 A command is queued on the app's worker and answered at once; what it came
 to shows on the device's cloud status sensor, as before. A backup preview is
@@ -186,7 +189,6 @@ def ws_backup_restore(
         connection.send_result(msg["id"])
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "fp2_companion/target/delete",
@@ -205,7 +207,6 @@ def ws_target_delete(
         connection.send_result(msg["id"])
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): "fp2_companion/live/subscribe", vol.Required("device"): DEVICE}
 )
